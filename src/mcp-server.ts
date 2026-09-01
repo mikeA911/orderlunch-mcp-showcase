@@ -6,7 +6,10 @@ import type { Identity } from './domain/types.js'
 import { DomainError } from './domain/errors.js'
 
 function result(value: unknown) {
-  return { content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }], structuredContent: value as Record<string, unknown> }
+  const structuredContent = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : { items: value }
+  return { content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }], structuredContent }
 }
 
 function failure(error: unknown) {

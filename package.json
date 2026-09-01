@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "db:migrate": "tsx src/db/migrate.ts"
+    "db:migrate": "tsx src/db/migrate.ts",
+    "smoke:mcp": "node --env-file=.env dist/scripts/smoke-mcp.js"
   },
   "engines": {
     "node": ">=22"
