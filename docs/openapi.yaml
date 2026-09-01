@@ -1,0 +1,150 @@
+openapi: 3.1.0
+info:
+  title: OrderLunch Simulated Outlet and Confirmation API
+  version: 0.1.0
+  description: Safe showcase API. It never reaches a real merchant or payment provider.
+servers:
+  - url: https://orderlunch.example.invalid
+security:
+  - gatewayKey: []
+    delegation: []
+paths:
+  /healthz:
+    get:
+      security: []
+      operationId: health
+      responses:
+        '200': { description: Process is running }
+  /readyz:
+    get:
+      security: []
+      operationId: readiness
+      responses:
+        '200': { description: Database is reachable }
+        '503': { $ref: '#/components/responses/Error' }
+  /approvals/{approvalId}/confirm:
+    post:
+      operationId: confirmOrderApproval
+      summary: Trusted-UI boundary; deliberately not exposed as an MCP tool
+      parameters:
+        - $ref: '#/components/parameters/ApprovalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [quoteHash, confirmed]
+              properties:
+                quoteHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+                confirmed: { const: true }
+      responses:
+        '200':
+          description: Approval is now available for one matching place_order call
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConfirmedApproval' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /orders/{orderId}/cancellation-confirmations:
+    post:
+      operationId: confirmCancellation
+      summary: Trusted-UI boundary for a simulated cancellation
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [confirmed]
+              properties:
+                confirmed: { const: true }
+      responses:
+        '200':
+          description: Short-lived single-use cancellation confirmation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CancellationConfirmation' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /mcp:
+    post:
+      operationId: streamableMcp
+      summary: MCP Streamable HTTP endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: MCP JSON-RPC response or stream }
+        '401': { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    gatewayKey:
+      type: apiKey
+      in: header
+      name: x-gateway-api-key
+    delegation:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Short-lived signed delegation with sub, project_id, tools, roles, iss, aud, exp and jti.
+  parameters:
+    ApprovalId:
+      name: approvalId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    ConfirmedApproval:
+      type: object
+      required: [id, quoteId, quoteHash, totalMinor, currency, outletId, fulfilment, expiresAt, approvedAt]
+      properties:
+        id: { type: string, format: uuid }
+        quoteId: { type: string, format: uuid }
+        quoteHash: { type: string }
+        totalMinor: { type: integer }
+        currency: { const: PHP }
+        outletId: { type: string }
+        fulfilment: { enum: [pickup, delivery] }
+        expiresAt: { type: string, format: date-time }
+        approvedAt: { type: string, format: date-time }
+    CancellationConfirmation:
+      type: object
+      required: [id, orderId, expiresAt, confirmedAt]
+      properties:
+        id: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        expiresAt: { type: string, format: date-time }
+        confirmedAt: { type: string, format: date-time }
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { type: object, additionalProperties: true }
+  responses:
+    Error:
+      description: Structured error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }

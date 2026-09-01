@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: orderlunch
+      POSTGRES_USER: orderlunch
+      POSTGRES_PASSWORD: orderlunch-local-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orderlunch -d orderlunch"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - orderlunch-data:/var/lib/postgresql/data
+  migrate:
+    build: .
+    command: ["node", "dist/src/db/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://orderlunch:orderlunch-local-only@postgres:5432/orderlunch
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://orderlunch:orderlunch-local-only@postgres:5432/orderlunch
+      DATABASE_SSL: "false"
+      PORT: "8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+volumes:
+  orderlunch-data:
