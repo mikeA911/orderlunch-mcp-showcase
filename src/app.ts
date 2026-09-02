@@ -12,7 +12,7 @@ import { OrderService } from './domain/order-service.js'
 import { createOrderLunchMcpServer } from './mcp-server.js'
 
 export function createApp(config: Config, pool: pg.Pool) {
-  const app = createMcpExpressApp()
+  const app = createMcpExpressApp({ host: '0.0.0.0' })
   const logger = pino({ level: config.LOG_LEVEL })
   const service = new OrderService(pool)
 
