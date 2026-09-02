@@ -19,7 +19,13 @@ export function createApp(config: Config, pool: pg.Pool) {
   app.get('/healthz', (_req, res) => res.json({ status: 'ok', service: 'orderlunch-mcp-showcase' }))
   app.get('/readyz', async (_req, res) => {
     try { await pool.query('SELECT 1'); res.json({ status: 'ready' }) }
-    catch { res.status(503).json({ status: 'not_ready' }) }
+    catch (error) {
+      logger.error({
+        error: error instanceof Error ? error.message : String(error),
+        code: typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined,
+      }, 'Database readiness check failed')
+      res.status(503).json({ status: 'not_ready' })
+    }
   })
 
   app.post('/approvals/:approvalId/confirm', async (req, res, next) => {
