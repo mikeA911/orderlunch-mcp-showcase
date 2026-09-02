@@ -35,7 +35,7 @@ export function createOrderLunchMcpServer(service: OrderService, identity: Ident
     description: 'Check availability of simulated menu items.', inputSchema: { menuItemIds: z.array(z.string().min(1)).min(1).max(20) }, annotations: { readOnlyHint: true, openWorldHint: false },
   }, ({ menuItemIds }) => safe(() => service.checkAvailability(identity, menuItemIds)))
   server.registerTool('prepare_quotation', {
-    description: 'Create an immutable, expiring simulated quotation. This never places or purchases an order.',
+    description: 'Create an immutable, expiring simulated quotation with pay-on-delivery terms. This never places, prepays or purchases an order.',
     inputSchema: { outletId: z.string().min(1), fulfilment: z.enum(['pickup', 'delivery']), basket: z.array(z.object({ menuItemId: z.string().min(1), quantity: z.number().int().min(1).max(20) })).min(1).max(20) },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, ({ outletId, fulfilment, basket }) => safe(() => service.prepareQuotation(identity, outletId, fulfilment, basket)))
@@ -44,7 +44,7 @@ export function createOrderLunchMcpServer(service: OrderService, identity: Ident
     inputSchema: { quoteId: z.string().uuid() }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, ({ quoteId }) => safe(() => service.requestOrderApproval(identity, quoteId)))
   server.registerTool('place_order', {
-    description: 'Place a simulated order only after a matching human confirmation. Consequential and idempotent; never performs a real purchase.',
+    description: 'Place a simulated pay-on-delivery order only after matching human confirmation. Consequential and idempotent; never charges or performs a real purchase.',
     inputSchema: { approvalId: z.string().uuid(), idempotencyKey: z.string().min(8).max(128) },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   }, ({ approvalId, idempotencyKey }) => safe(() => service.placeOrder(identity, approvalId, idempotencyKey)))

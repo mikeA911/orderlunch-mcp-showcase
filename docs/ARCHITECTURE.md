@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This repository demonstrates a governed, simulated lunch-order flow. It never contacts a real merchant, processes payment, stores a personal address or initiates delivery.
+This repository demonstrates a governed, simulated lunch-order flow. All quotations, approvals and orders explicitly use pay-on-delivery terms. It never contacts a real merchant, collects payment credentials, processes payment, stores a personal address or initiates delivery.
 
 ```text
 Ember
@@ -27,7 +27,7 @@ Production should use an asymmetric KB Sandbox JWKS. HS256 exists only for a con
 
 ## Transaction and approval model
 
-`prepare_quotation` prices the basket from server-side menu rows and stores an immutable quote digest. `request_order_approval` creates a short-lived pending record bound to the user, Project, outlet, fulfilment choice, exact items, total, currency and quote digest.
+`prepare_quotation` prices the basket from server-side menu rows and stores an immutable quote digest that includes the pay-on-delivery term. `request_order_approval` creates a short-lived pending record bound to the user, Project, outlet, fulfilment choice, payment term, exact items, total, currency and quote digest.
 
 A trusted UI calls `POST /approvals/:id/confirm` with the matching quote digest. Only then can `place_order` consume the approval. PostgreSQL locks the approval row, creates one order and marks the approval consumed in the same transaction. A unique `(user_id, project_id, idempotency_key)` constraint makes identical retries return the original order and rejects reuse for a different approval. Cancellation follows the same rule: trusted UI creates a short-lived confirmation through `POST /orders/:id/cancellation-confirmations`, and the MCP tool must consume that exact confirmation.
 

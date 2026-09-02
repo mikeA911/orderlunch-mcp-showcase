@@ -7,6 +7,7 @@ const QUOTE_TTL_MS = 15 * 60 * 1000
 const APPROVAL_TTL_MS = 5 * 60 * 1000
 const CANCELLABLE: OrderState[] = ['placed', 'preparing']
 const ADVANCE: Partial<Record<OrderState, OrderState>> = { placed: 'preparing', preparing: 'ready', ready: 'completed' }
+const PAYMENT_TERMS = 'pay_on_delivery' as const
 
 function rows<T>(result: pg.QueryResult): T[] { return result.rows as T[] }
 function placeholders(count: number): string { return Array.from({ length: count }, (_, index) => `$${index + 1}`).join(',') }
@@ -73,7 +74,7 @@ export class OrderService {
     })
     const totalMinor = quotedItems.reduce((sum, item) => sum + item.lineTotalMinor, 0)
     const expiresAt = new Date(this.now().getTime() + QUOTE_TTL_MS)
-    const quoteHash = canonicalHash({ outletId, fulfilment, currency: 'PHP', items: quotedItems, totalMinor, expiresAt: expiresAt.toISOString() })
+    const quoteHash = canonicalHash({ outletId, fulfilment, paymentTerms: PAYMENT_TERMS, currency: 'PHP', items: quotedItems, totalMinor, expiresAt: expiresAt.toISOString() })
     const inserted = await this.pool.query(
       `INSERT INTO quotes(user_id,project_id,outlet_id,fulfilment,currency,items,total_minor,quote_hash,expires_at)
        VALUES($1,$2,$3,$4,'PHP',$5,$6,$7,$8) RETURNING id`,
@@ -81,13 +82,13 @@ export class OrderService {
     )
     const id = String(inserted.rows[0].id)
     await this.audit(this.pool, identity, 'prepare_quotation', 'quote', id, 'success', { quoteHash, totalMinor })
-    return { id, userId: identity.userId, projectId: identity.projectId, outletId, fulfilment, currency: 'PHP', items: quotedItems, totalMinor, quoteHash, expiresAt }
+    return { id, userId: identity.userId, projectId: identity.projectId, outletId, fulfilment, paymentTerms: PAYMENT_TERMS, currency: 'PHP', items: quotedItems, totalMinor, quoteHash, expiresAt }
   }
 
   async requestOrderApproval(identity: Identity, quoteId: string) {
     this.requireTool(identity, 'request_order_approval')
     const quoteResult = await this.pool.query(
-      `SELECT id,user_id AS "userId",project_id AS "projectId",outlet_id AS "outletId",fulfilment,currency,items,total_minor AS "totalMinor",quote_hash AS "quoteHash",expires_at AS "expiresAt"
+      `SELECT id,user_id AS "userId",project_id AS "projectId",outlet_id AS "outletId",fulfilment,payment_terms AS "paymentTerms",currency,items,total_minor AS "totalMinor",quote_hash AS "quoteHash",expires_at AS "expiresAt"
        FROM quotes WHERE id=$1 AND user_id=$2 AND project_id=$3`,
       [quoteId, identity.userId, identity.projectId],
     )
@@ -96,13 +97,13 @@ export class OrderService {
     if (new Date(quote.expiresAt) <= this.now()) throw errors.expired('Quote')
     const expiresAt = new Date(Math.min(new Date(quote.expiresAt).getTime(), this.now().getTime() + APPROVAL_TTL_MS))
     const result = await this.pool.query(
-      `INSERT INTO approvals(quote_id,user_id,project_id,quote_hash,outlet_id,fulfilment,total_minor,currency,operation,expires_at)
-       VALUES($1,$2,$3,$4,$5,$6,$7,'PHP','place_order',$8) RETURNING id`,
-      [quote.id, identity.userId, identity.projectId, quote.quoteHash, quote.outletId, quote.fulfilment, quote.totalMinor, expiresAt],
+      `INSERT INTO approvals(quote_id,user_id,project_id,quote_hash,outlet_id,fulfilment,payment_terms,total_minor,currency,operation,expires_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,'PHP','place_order',$9) RETURNING id`,
+      [quote.id, identity.userId, identity.projectId, quote.quoteHash, quote.outletId, quote.fulfilment, quote.paymentTerms, quote.totalMinor, expiresAt],
     )
     const approvalId = String(result.rows[0].id)
     await this.audit(this.pool, identity, 'request_order_approval', 'approval', approvalId, 'pending_human_confirmation', { quoteId, expiresAt })
-    return { approvalId, quoteId, quoteHash: quote.quoteHash, totalMinor: quote.totalMinor, currency: 'PHP', outletId: quote.outletId, fulfilment: quote.fulfilment, expiresAt, status: 'pending_human_confirmation' }
+    return { approvalId, quoteId, quoteHash: quote.quoteHash, totalMinor: quote.totalMinor, currency: 'PHP', outletId: quote.outletId, fulfilment: quote.fulfilment, paymentTerms: quote.paymentTerms, expiresAt, status: 'pending_human_confirmation' }
   }
 
   async confirmOrderApproval(identity: Identity, approvalId: string, quoteHash: string, confirmed: boolean) {
@@ -110,7 +111,7 @@ export class OrderService {
     const result = await this.pool.query(
       `UPDATE approvals SET approved_at=now(),approved_by=$2
        WHERE id=$1 AND user_id=$2 AND project_id=$3 AND quote_hash=$4 AND consumed_at IS NULL AND approved_at IS NULL AND expires_at > now()
-       RETURNING id,quote_id AS "quoteId",quote_hash AS "quoteHash",total_minor AS "totalMinor",currency,outlet_id AS "outletId",fulfilment,expires_at AS "expiresAt",approved_at AS "approvedAt"`,
+       RETURNING id,quote_id AS "quoteId",quote_hash AS "quoteHash",total_minor AS "totalMinor",currency,outlet_id AS "outletId",fulfilment,payment_terms AS "paymentTerms",expires_at AS "expiresAt",approved_at AS "approvedAt"`,
       [approvalId, identity.userId, identity.projectId, quoteHash],
     )
     if (!result.rowCount) throw errors.conflict('Approval is expired, already approved/used, outside this user/project, or does not match the quote')
@@ -125,7 +126,7 @@ export class OrderService {
     try {
       await client.query('BEGIN')
       const existing = await client.query(
-        `SELECT id,approval_id AS "approvalId",quote_id AS "quoteId",user_id AS "userId",project_id AS "projectId",outlet_id AS "outletId",state,fulfilment,currency,items,total_minor AS "totalMinor",created_at AS "createdAt",updated_at AS "updatedAt"
+        `SELECT id,approval_id AS "approvalId",quote_id AS "quoteId",user_id AS "userId",project_id AS "projectId",outlet_id AS "outletId",state,fulfilment,payment_terms AS "paymentTerms",currency,items,total_minor AS "totalMinor",created_at AS "createdAt",updated_at AS "updatedAt"
          FROM orders WHERE user_id=$1 AND project_id=$2 AND idempotency_key=$3`,
         [identity.userId, identity.projectId, idempotencyKey],
       )
@@ -144,10 +145,10 @@ export class OrderService {
       if (!approval.approved_at || approval.approved_by !== identity.userId) throw errors.forbidden('A matching human confirmation is required')
       if (new Date(approval.expires_at) <= this.now() || new Date(approval.quote_expires_at) <= this.now()) throw errors.expired('Approval')
       const result = await client.query(
-        `INSERT INTO orders(quote_id,approval_id,idempotency_key,user_id,project_id,outlet_id,fulfilment,currency,items,total_minor,state)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'placed')
-         RETURNING id,quote_id AS "quoteId",user_id AS "userId",project_id AS "projectId",outlet_id AS "outletId",state,fulfilment,currency,items,total_minor AS "totalMinor",created_at AS "createdAt",updated_at AS "updatedAt"`,
-        [approval.quote_id, approval.id, idempotencyKey, identity.userId, identity.projectId, approval.outlet_id, approval.fulfilment, approval.currency, JSON.stringify(approval.items), approval.total_minor],
+        `INSERT INTO orders(quote_id,approval_id,idempotency_key,user_id,project_id,outlet_id,fulfilment,payment_terms,currency,items,total_minor,state)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'placed')
+         RETURNING id,quote_id AS "quoteId",user_id AS "userId",project_id AS "projectId",outlet_id AS "outletId",state,fulfilment,payment_terms AS "paymentTerms",currency,items,total_minor AS "totalMinor",created_at AS "createdAt",updated_at AS "updatedAt"`,
+        [approval.quote_id, approval.id, idempotencyKey, identity.userId, identity.projectId, approval.outlet_id, approval.fulfilment, approval.payment_terms, approval.currency, JSON.stringify(approval.items), approval.total_minor],
       )
       await client.query(`UPDATE approvals SET consumed_at=now() WHERE id=$1`, [approvalId])
       await this.audit(client, identity, 'place_order', 'order', String(result.rows[0].id), 'success', { approvalId, idempotencyKey })
@@ -162,7 +163,7 @@ export class OrderService {
   async getOrderStatus(identity: Identity, orderId: string) {
     this.requireTool(identity, 'get_order_status')
     const result = await this.pool.query(
-      `SELECT id,quote_id AS "quoteId",user_id AS "userId",project_id AS "projectId",outlet_id AS "outletId",state,fulfilment,currency,items,total_minor AS "totalMinor",created_at AS "createdAt",updated_at AS "updatedAt"
+      `SELECT id,quote_id AS "quoteId",user_id AS "userId",project_id AS "projectId",outlet_id AS "outletId",state,fulfilment,payment_terms AS "paymentTerms",currency,items,total_minor AS "totalMinor",created_at AS "createdAt",updated_at AS "updatedAt"
        FROM orders WHERE id=$1 AND user_id=$2 AND project_id=$3`, [orderId, identity.userId, identity.projectId])
     if (!result.rowCount) throw errors.notFound('Order')
     return result.rows[0]

@@ -33,12 +33,14 @@ describe('durable quotation and order flow', () => {
   it('requires human confirmation and returns one order for an identical retry', async () => {
     const quote = await service.prepareQuotation(identity, 'canteen-sim', 'pickup', [{ menuItemId: 'canteen-adobo', quantity: 2 }])
     expect(quote.totalMinor).toBe(33000)
+    expect(quote.paymentTerms).toBe('pay_on_delivery')
     const pending = await service.requestOrderApproval(identity, quote.id)
 
     await expect(service.placeOrder(identity, pending.approvalId, 'retry-key-123')).rejects.toMatchObject({ code: 'FORBIDDEN' })
 
     await service.confirmOrderApproval(identity, pending.approvalId, quote.quoteHash, true)
     const first = await service.placeOrder(identity, pending.approvalId, 'retry-key-123')
+    expect(first.paymentTerms).toBe('pay_on_delivery')
     const retry = await service.placeOrder(identity, pending.approvalId, 'retry-key-123')
     expect(retry.id).toBe(first.id)
 

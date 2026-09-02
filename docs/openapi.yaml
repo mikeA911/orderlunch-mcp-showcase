@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: OrderLunch Simulated Outlet and Confirmation API
   version: 0.1.0
-  description: Safe showcase API. It never reaches a real merchant or payment provider.
+  description: Safe pay-on-delivery showcase API. It never reaches a real merchant or payment provider and never collects payment credentials.
 servers:
   - url: https://orderlunch.example.invalid
 security:
@@ -112,7 +112,7 @@ components:
   schemas:
     ConfirmedApproval:
       type: object
-      required: [id, quoteId, quoteHash, totalMinor, currency, outletId, fulfilment, expiresAt, approvedAt]
+      required: [id, quoteId, quoteHash, totalMinor, currency, outletId, fulfilment, paymentTerms, expiresAt, approvedAt]
       properties:
         id: { type: string, format: uuid }
         quoteId: { type: string, format: uuid }
@@ -121,6 +121,7 @@ components:
         currency: { const: PHP }
         outletId: { type: string }
         fulfilment: { enum: [pickup, delivery] }
+        paymentTerms: { const: pay_on_delivery }
         expiresAt: { type: string, format: date-time }
         approvedAt: { type: string, format: date-time }
     CancellationConfirmation:

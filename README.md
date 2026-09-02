@@ -1,6 +1,6 @@
 # OrderLunch MCP Showcase
 
-A safe, simulated reference implementation showing how Ember can use a registered MCP server to prepare a lunch quotation and place a simulated order only after explicit human confirmation.
+A safe, simulated reference implementation showing how Ember can use a registered MCP server to prepare a lunch quotation and place a pay-on-delivery simulated order only after explicit human confirmation.
 
 ## Local setup
 
@@ -24,4 +24,4 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for security, approval and depl
 
 ## Status
 
-This is a showcase, not a commerce service. It has no real outlets, payments, addresses or delivery integrations.
+This is a showcase, not a commerce service. Every quotation and order explicitly uses `pay_on_delivery`; the service never collects payment credentials or processes a real payment. It has no real outlets, addresses or delivery integrations.

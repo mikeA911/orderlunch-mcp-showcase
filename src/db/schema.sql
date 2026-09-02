@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS quotes (
   fulfilment text NOT NULL CHECK (fulfilment IN ('pickup', 'delivery')), currency text NOT NULL CHECK (currency = 'PHP'), items jsonb NOT NULL,
   total_minor integer NOT NULL CHECK (total_minor >= 0), quote_hash text NOT NULL, expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE quotes ADD COLUMN IF NOT EXISTS payment_terms text NOT NULL DEFAULT 'pay_on_delivery';
+ALTER TABLE quotes DROP CONSTRAINT IF EXISTS quotes_payment_terms_check;
+ALTER TABLE quotes ADD CONSTRAINT quotes_payment_terms_check CHECK (payment_terms = 'pay_on_delivery');
 CREATE TABLE IF NOT EXISTS approvals (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), quote_id uuid NOT NULL REFERENCES quotes(id), user_id text NOT NULL, project_id text NOT NULL,
   quote_hash text NOT NULL, outlet_id text NOT NULL, fulfilment text NOT NULL, total_minor integer NOT NULL, currency text NOT NULL,
@@ -16,6 +19,9 @@ CREATE TABLE IF NOT EXISTS approvals (
 );
 ALTER TABLE approvals ADD COLUMN IF NOT EXISTS approved_at timestamptz;
 ALTER TABLE approvals ADD COLUMN IF NOT EXISTS approved_by text;
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS payment_terms text NOT NULL DEFAULT 'pay_on_delivery';
+ALTER TABLE approvals DROP CONSTRAINT IF EXISTS approvals_payment_terms_check;
+ALTER TABLE approvals ADD CONSTRAINT approvals_payment_terms_check CHECK (payment_terms = 'pay_on_delivery');
 CREATE TABLE IF NOT EXISTS orders (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), quote_id uuid NOT NULL REFERENCES quotes(id), approval_id uuid NOT NULL UNIQUE REFERENCES approvals(id),
   idempotency_key text NOT NULL, user_id text NOT NULL, project_id text NOT NULL, outlet_id text NOT NULL, fulfilment text NOT NULL,
@@ -23,6 +29,9 @@ CREATE TABLE IF NOT EXISTS orders (
   state text NOT NULL CHECK (state IN ('placed','preparing','ready','completed','cancelled')),
   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE (user_id, project_id, idempotency_key)
 );
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_terms text NOT NULL DEFAULT 'pay_on_delivery';
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_payment_terms_check;
+ALTER TABLE orders ADD CONSTRAINT orders_payment_terms_check CHECK (payment_terms = 'pay_on_delivery');
 CREATE TABLE IF NOT EXISTS audit_events (
   id bigserial PRIMARY KEY, occurred_at timestamptz NOT NULL DEFAULT now(), request_id text NOT NULL, user_id text NOT NULL,
   project_id text NOT NULL, action text NOT NULL, entity_type text NOT NULL, entity_id text, outcome text NOT NULL, detail jsonb NOT NULL DEFAULT '{}'::jsonb
