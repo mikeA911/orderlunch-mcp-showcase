@@ -10,7 +10,7 @@ A safe, simulated reference implementation showing how Ember can use a registere
 4. Run `docker compose up --build`.
 5. Check `http://localhost:8080/healthz` and `http://localhost:8080/readyz`.
 
-The remote MCP endpoint is `POST /mcp`. The human confirmation boundary is `POST /approvals/:approvalId/confirm`; it is deliberately not an MCP tool.
+The remote MCP endpoint is `POST /mcp`. The human confirmation boundary is `POST /approvals/:approvalId/confirm`; it is deliberately not an MCP tool. Its JSON body must contain both the digest returned by `request_order_approval` and the trusted user's confirmation: `{ "quoteHash": "<64-character digest>", "confirmed": true }`.
 
 ## Commands
 

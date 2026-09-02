@@ -115,6 +115,7 @@ export class OrderService {
 
   async confirmOrderApproval(identity: Identity, approvalId: string, quoteHash: string, confirmed: boolean) {
     if (!confirmed) throw errors.invalid('The confirmation control was not accepted')
+    if (!/^[a-f0-9]{64}$/.test(quoteHash)) throw errors.invalid('A valid quoteHash from the pending approval is required')
     const result = await this.pool.query(
       `UPDATE approvals SET approved_at=now(),approved_by=$2
        WHERE id=$1 AND user_id=$2 AND project_id=$3 AND quote_hash=$4 AND consumed_at IS NULL AND approved_at IS NULL AND expires_at > now()

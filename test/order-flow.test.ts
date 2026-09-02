@@ -66,4 +66,14 @@ describe('durable quotation and order flow', () => {
     expect(new Date(pending.expiresAt).getTime() - databaseNow).toBeGreaterThan(4 * 60 * 1000)
     await expect(service.confirmOrderApproval(identity, pending.approvalId, quote.quoteHash, true)).resolves.toMatchObject({ id: pending.approvalId })
   })
+
+  it('rejects a missing quote hash as an invalid confirmation request', async () => {
+    const quote = await service.prepareQuotation(identity, 'canteen-sim', 'pickup', [{ menuItemId: 'canteen-adobo', quantity: 1 }])
+    const pending = await service.requestOrderApproval(identity, quote.id)
+
+    await expect(service.confirmOrderApproval(identity, pending.approvalId, '', true)).rejects.toMatchObject({
+      code: 'INVALID_REQUEST',
+      status: 422,
+    })
+  })
 })
