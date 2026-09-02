@@ -24,8 +24,7 @@ describe('durable quotation and order flow', () => {
     pool = new adapter.Pool() as unknown as pg.Pool
     const schema = await readFile(fileURLToPath(new URL('../src/db/schema.sql', import.meta.url)), 'utf8')
     await pool.query(schema)
-    const clock = new Date()
-    service = new OrderService(pool, () => clock)
+    service = new OrderService(pool)
   })
 
   afterEach(async () => pool.end())
@@ -54,5 +53,17 @@ describe('durable quotation and order flow', () => {
     await service.confirmOrderApproval(identity, pending.approvalId, quote.quoteHash, true)
     const order = await service.placeOrder(identity, pending.approvalId, 'isolation-key-1')
     await expect(service.getOrderStatus({ ...identity, userId: 'user-2' }, order.id)).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+
+  it('calculates quote and approval expiry from the database clock', async () => {
+    const databaseClock = await pool.query(`SELECT now() AS "now"`)
+    const databaseNow = new Date(databaseClock.rows[0].now).getTime()
+
+    const quote = await service.prepareQuotation(identity, 'canteen-sim', 'pickup', [{ menuItemId: 'canteen-adobo', quantity: 1 }])
+    const pending = await service.requestOrderApproval(identity, quote.id)
+
+    expect(new Date(quote.expiresAt).getTime() - databaseNow).toBeGreaterThan(14 * 60 * 1000)
+    expect(new Date(pending.expiresAt).getTime() - databaseNow).toBeGreaterThan(4 * 60 * 1000)
+    await expect(service.confirmOrderApproval(identity, pending.approvalId, quote.quoteHash, true)).resolves.toMatchObject({ id: pending.approvalId })
   })
 })

@@ -13,7 +13,12 @@ function rows<T>(result: pg.QueryResult): T[] { return result.rows as T[] }
 function placeholders(count: number): string { return Array.from({ length: count }, (_, index) => `$${index + 1}`).join(',') }
 
 export class OrderService {
-  constructor(private readonly pool: pg.Pool, private readonly now: () => Date = () => new Date()) {}
+  constructor(private readonly pool: pg.Pool) {}
+
+  private async databaseNow(client: pg.Pool | pg.PoolClient = this.pool): Promise<Date> {
+    const result = await client.query(`SELECT now() AS "now"`)
+    return new Date(result.rows[0].now)
+  }
 
   private requireTool(identity: Identity, tool: string): void {
     if (!identity.tools.includes(tool) && !identity.tools.includes('*')) throw errors.forbidden(`Delegation does not allow ${tool}`)
@@ -73,7 +78,8 @@ export class OrderService {
       return { menuItemId: item.id, name: item.name, quantity: input.quantity, unitPriceMinor: item.priceMinor, lineTotalMinor: item.priceMinor * input.quantity }
     })
     const totalMinor = quotedItems.reduce((sum, item) => sum + item.lineTotalMinor, 0)
-    const expiresAt = new Date(this.now().getTime() + QUOTE_TTL_MS)
+    const databaseNow = await this.databaseNow()
+    const expiresAt = new Date(databaseNow.getTime() + QUOTE_TTL_MS)
     const quoteHash = canonicalHash({ outletId, fulfilment, paymentTerms: PAYMENT_TERMS, currency: 'PHP', items: quotedItems, totalMinor, expiresAt: expiresAt.toISOString() })
     const inserted = await this.pool.query(
       `INSERT INTO quotes(user_id,project_id,outlet_id,fulfilment,currency,items,total_minor,quote_hash,expires_at)
@@ -94,8 +100,9 @@ export class OrderService {
     )
     if (quoteResult.rowCount === 0) throw errors.notFound('Quote')
     const quote = rows<Quote>(quoteResult)[0]!
-    if (new Date(quote.expiresAt) <= this.now()) throw errors.expired('Quote')
-    const expiresAt = new Date(Math.min(new Date(quote.expiresAt).getTime(), this.now().getTime() + APPROVAL_TTL_MS))
+    const databaseNow = await this.databaseNow()
+    if (new Date(quote.expiresAt) <= databaseNow) throw errors.expired('Quote')
+    const expiresAt = new Date(Math.min(new Date(quote.expiresAt).getTime(), databaseNow.getTime() + APPROVAL_TTL_MS))
     const result = await this.pool.query(
       `INSERT INTO approvals(quote_id,user_id,project_id,quote_hash,outlet_id,fulfilment,payment_terms,total_minor,currency,operation,expires_at)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,'PHP','place_order',$9) RETURNING id`,
@@ -143,7 +150,8 @@ export class OrderService {
       const approval = approvalResult.rows[0]
       if (approval.consumed_at) throw errors.conflict('Approval has already been consumed')
       if (!approval.approved_at || approval.approved_by !== identity.userId) throw errors.forbidden('A matching human confirmation is required')
-      if (new Date(approval.expires_at) <= this.now() || new Date(approval.quote_expires_at) <= this.now()) throw errors.expired('Approval')
+      const databaseNow = await this.databaseNow(client)
+      if (new Date(approval.expires_at) <= databaseNow || new Date(approval.quote_expires_at) <= databaseNow) throw errors.expired('Approval')
       const result = await client.query(
         `INSERT INTO orders(quote_id,approval_id,idempotency_key,user_id,project_id,outlet_id,fulfilment,payment_terms,currency,items,total_minor,state)
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'placed')
@@ -174,7 +182,8 @@ export class OrderService {
     const order = await this.pool.query(`SELECT id,state FROM orders WHERE id=$1 AND user_id=$2 AND project_id=$3`, [orderId, identity.userId, identity.projectId])
     if (!order.rowCount) throw errors.notFound('Order')
     if (!CANCELLABLE.includes(order.rows[0].state as OrderState)) throw errors.conflict(`Order cannot be cancelled from state ${order.rows[0].state}`)
-    const expiresAt = new Date(this.now().getTime() + APPROVAL_TTL_MS)
+    const databaseNow = await this.databaseNow()
+    const expiresAt = new Date(databaseNow.getTime() + APPROVAL_TTL_MS)
     const result = await this.pool.query(
       `INSERT INTO cancellation_confirmations(order_id,user_id,project_id,expires_at,confirmed_by) VALUES($1,$2,$3,$4,$2)
        RETURNING id,order_id AS "orderId",expires_at AS "expiresAt",confirmed_at AS "confirmedAt"`,
@@ -195,7 +204,8 @@ export class OrderService {
       )
       if (!confirmation.rowCount) throw errors.notFound('Cancellation confirmation')
       if (confirmation.rows[0].consumed_at) throw errors.conflict('Cancellation confirmation was already used')
-      if (new Date(confirmation.rows[0].expires_at) <= this.now()) throw errors.expired('Cancellation confirmation')
+      const databaseNow = await this.databaseNow(client)
+      if (new Date(confirmation.rows[0].expires_at) <= databaseNow) throw errors.expired('Cancellation confirmation')
       const result = await client.query(
         `UPDATE orders SET state='cancelled',updated_at=now() WHERE id=$1 AND user_id=$2 AND project_id=$3 AND state = ANY($4::text[])
          RETURNING id,state,updated_at AS "updatedAt"`, [orderId, identity.userId, identity.projectId, CANCELLABLE])
